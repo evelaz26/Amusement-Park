@@ -1,0 +1,200 @@
+<!--MerryGoRound.html
+
+	Written Fall 2020 by Emiliano Velazquez 
+    
+	This page displays a Merry-Go-Round made up of several shapes with proper textures and lighting. 
+	There is also interactivity to move around the world with the keyboard.
+ -->
+
+
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<title>Merry-Go-Round</title>
+
+<!-- Load up the external javascript files -->
+<script type="text/javascript" src="../Common/webgl-utils.js"></script>
+<script type="text/javascript" src="../Common/initShaders.js"></script>
+<script type="text/javascript" src="../Common/MV.js"></script>
+<script type="text/javascript" src="AmusementParkDriver.js"></script>	
+<script type="text/javascript" src="MerryGoRound.js"></script>	
+<script type="text/javascript" src="horse.js"></script>
+<script type="text/javascript" src="cone.js"></script>
+<script type="text/javascript" src="cylinder.js"></script>
+<script type="text/javascript" src="sphere.js"></script>
+<script type="text/javascript" src="sign.js"></script>
+<script type="text/javascript" src="shortCube.js"></script>
+
+<!-- The Vertex Shader ------------------------------------------------------------------>
+
+<script id="vertex-shader" type="x-shader/x-vertex" >
+
+	// Attributes are values that vary from vertex to vertex 
+	attribute vec3 vPosition;	// Vertex position data in 3D space
+	attribute vec3 vColor;		// Vertex color data - Not needed for all applications
+	attribute vec3 vNormal;		// Normal position data
+	attribute vec2 vTexCoords;	// Texture Coordinates
+	attribute float vTexIndex;	// Texture Index, to know what texture to use 
+	
+	// Uniform variables are shared for all vertices 
+	uniform mat4 vModelView;		// Camera Model View Matrix
+	uniform mat4 vProjection;		// Camera Projection Matrix
+	uniform mat4 vTransformation;	// Model transformation matrix
+	uniform mat3 vNormalTransformation;	// Transformation matrix for normal vectors
+	
+	// Varying values are passed from vertex shader to fragment shader
+	varying vec4 color;		// Interpolated color 
+	varying vec3 fragNormal;	// Fragment normal
+	varying vec3 fragEye;		// Fragment eye vector
+	varying vec2 fTexCoords;	// Texture coordinates 
+	varying float fTexIndex;	// Texture Index
+	
+	void main( ) {
+		precision mediump float; vTexCoords;
+		
+		// Apply the model transformations to the position
+		gl_Position = vProjection * vModelView * vTransformation * vec4( vPosition, 1.0 );
+
+		// Pass-throughs to fragment shader
+		color = vec4( vColor, 1 );
+		fragNormal = vNormal;
+		fTexCoords = vTexCoords;
+		fTexIndex = vTexIndex;
+		
+		// If this vertex normal <=0, we do no lighting calculations
+		if(length(vNormal) <= 0.0) {
+			return;
+		}
+
+		// Calculate the normal and eye positions for the lighting calculations
+		fragNormal = normalize(vNormalTransformation * vNormal);
+		fragEye = - normalize(vNormalTransformation * vPosition);
+		
+		// First we do the Directed light in the vertex shader for Gaurand Shading
+		vec3 kd1 = vec3(0.1, 0.1, 1.0); // Directional light color, strong blue
+		
+		// Then calculate Directed light per vertex, no ambient light here
+		vec3 Ld1 = vec3(0.7, 0.7, 0.7);		// Light material intensity of Directed light
+		vec3 l1 = normalize((vec4(0.0, 0.0, 0.1, 1.0)).xyz );	// Light directional vector
+		float dotProductDirected = dot(l1, fragNormal);			// Dot product of Normal & Light direction vectors
+		vec3 color2 = max(dotProductDirected, 0.0) * kd1 * Ld1;
+
+		color = color + vec4(color2, 1); // Add Directed light 
+		return;		
+		
+	} // end of main( ) of vertex shader
+
+</script>	<!--	End of vertex shader -->
+
+<!--  The Fragment Shader --------------------------------------------------------------------->
+
+<script id="fragment-shader" type="x-shader/x-fragment">
+	precision mediump float;
+	
+	// Varying variables are interpolated between vertices 	
+	varying vec4 color;		// Interpolated color 
+	varying vec3 fragNormal;	// Fragment normal
+	varying vec3 fragEye;		// Fragment eye vector
+	varying vec2 fTexCoords;	// Texture coordinatges passed to fragment shader
+	varying float fTexIndex;	// Texture Index
+	
+	// Uniform variables are shared for all fragments 
+	uniform sampler2D texMapCheckered;	// The checkered texture 
+	uniform sampler2D texMapMGR;	// The MGR sign texture 
+
+	// Lighting calculations done in the Fragment Shader to follow Blinn-Phong Lighting Model
+	void main( ) {
+				
+		// Use the color passed through from the vertex shader 
+		gl_FragColor = color;
+		vec4 texture = color;	// Default fTexIndex = 0.0, so no texture
+
+		if(fTexIndex == 1.0){	// The Checkered Texture Index 
+			texture = texture2D(texMapCheckered, fTexCoords) * color;
+		}
+		else if(fTexIndex == 2.0){	// The MGR sign Texture Index 
+			texture = texture2D(texMapMGR, fTexCoords) * color;
+		}
+		
+		// If this vertex normal <=0, we do no lighting calculations
+		if(length(fragNormal) <= 0.0) {
+			return;
+		}	
+			
+		// Then we do the Point light in the fragment shader for Phong Shading
+		// The light colors for the Point light
+		vec3 ka = vec3(0.8, 1.0, 0.8);	// Ambient light color, bright slight green
+		vec3 kd = vec3(1.0, 0.1, 0.1); 	// Diffuse light color, strong red
+		vec3 ks = vec3(2.0, 2.0, 2.0);	// Specular light color, strong white
+
+		// Calculate ambient light, same for both lights
+		vec3 Iau = vec3(0.6, 0.6, 0.6);	// Intensity (reflectivity material) of ambient light
+		vec3 color3 = ka * Iau;	// Add ambient light
+		
+		// Then add diffuse light
+		vec3 Ld = vec3(0.7, 0.7, 0.7);		// Light source intensity of diffuse light
+		vec3 l = normalize((vec4(0.2, 0.3, -0.9, 1.0)).xyz );	// Light directional vector
+		//vec3 l = normalize((vec4(0.2, 0.3, -0.9, 1.0)).xyz + fragEye);	// Light directional vector
+		float dotProductD = dot(l, fragNormal );			// Dot product of Normal & Light direction vectors
+		color3 = color3 + max(dotProductD, 0.0) * kd * Ld;		// Add diffuse light
+		
+		// Then add specular light, for only the first light
+		vec3 Ls = vec3(1.0, 1.0, 1.0);		// Light source intensity of specular light
+		vec3 h = normalize((l + fragEye) / 2.0) ;				// Half-length vector from light & eye vector
+		float dotProductS = dot(h, fragNormal);					// Dot product of Normal & half-length direction vectors
+		float spec = pow((max(dotProductS, 0.0)), 3.0) ;
+		color3 = color3 + (spec * ks * Ls);					// Add specular light
+
+		gl_FragColor = texture * vec4(color3, 1);	// The Blinn-Phong light for the vertex
+		
+		return;
+	
+	} // End of main( ) for fragment shader
+	
+
+</script>	<!-- End of fragment shader -->
+
+</head>
+
+<!-- End of all the scripts.  Now here is the actual web page -->
+
+<body>
+<h3 align="center">Amusement Park<br />
+Emiliano Velazquez - evelaz26@uic.edu</h3>
+<p></p>
+
+<canvas id="gl-canvas" width="600" height="400">
+  Ooops No Canvas Found
+</canvas>
+<p>
+	Welcome to the Amusement Park! Useful Keys: [R] = reset | [Q] = quit | [H] = help
+</p>
+<p>
+	Move around with: [W] = forward | [S] = backward | [A] = rotate left | [D] = rotate right
+</p>
+
+<p>
+	<b>Description: </b>
+	<ul>
+		<li>Created texture-mapped array for the MGR sign and the checkered blue-red design</li>
+		<li>Every object has texture map coordinates and a float index for whether it should be texture mapped and with what texture. 
+			Note the pole cylinders are not texture mapped but the cylinder in the middle is.  
+		</li>
+		<li>Check for texture mapping index variable is in the fragment shader before lighting calculations</li>
+		<li>Added two lights for makeup points described below</li>
+	</ul>
+</p>
+
+<p>
+	  <b>What Changed? : What Fixed It? </b>
+	<ul>
+		<li>All light for every object (Cylinder/Cube/Cone/Sphere) : Correct normal transformation calculations and assigment in render() and vertex shader</li>
+		<li>Specular light for every object (Cylinder/Cube/Cone/Sphere) : Correct normal calculations in every class (object), passed onto shaders</li>
+		<li>Ambient/Diffuse light for horses (Cone/Cube) : Horse class reuses objects/calculations from Cone.js and shortCube.js</li>
+		<li>Pointed Light interpolated between polygons instead of vertices : Phong light and color calculations now done in the fragment shader</li>
+	</ul>
+</p>
+
+</body>
+</html>
